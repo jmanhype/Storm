@@ -7,7 +7,7 @@ from article_writing_module import ArticleWritingModule
 import dspy
 
 # Initialize DSPy settings with a large language model
-claude = dspy.Claude(model="claude-3-haiku-20240307", api_key="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")
+claude = dspy.Claude(model="claude-3-haiku-20240307", api_key="")
 dspy.settings.configure(lm=claude)
 
 class ArticleCreationStateMachine:
