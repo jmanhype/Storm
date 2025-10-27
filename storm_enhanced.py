@@ -95,10 +95,15 @@ class EnhancedOutlineCreationModule(dspy.Module):
             return f"Outline for {topic}\n\n{conversation_summary}"
 
 class EnhancedArticleWritingModule(dspy.Module):
-    """Single-pass article generation - no loops, no repetition"""
-    def __init__(self):
+    """
+    Configurable article generation with length control
+    Uses prompt engineering instead of loops to avoid repetition
+    """
+    def __init__(self, target_words=1000, min_words=500):
         super().__init__()
         self.write_article = dspy.ChainOfThought(ArticleWritingSignature)
+        self.target_words = target_words
+        self.min_words = min_words
 
     def forward(self, topic, outline, conversation_history):
         # Create context from conversations
@@ -106,17 +111,46 @@ class EnhancedArticleWritingModule(dspy.Module):
             f"{q}: {a}" for q, a in conversation_history
         ])
 
-        logging.info(f"Generating article for: {topic}")
+        logging.info(f"Generating article for: {topic} (target: {self.target_words} words, min: {self.min_words} words)")
+
+        # Enhanced prompt with length specification
+        enhanced_outline = f"""TARGET LENGTH: {self.target_words} words (minimum {self.min_words} words)
+
+OUTLINE:
+{outline}
+
+INSTRUCTIONS:
+- Write a comprehensive, detailed article covering all sections in the outline
+- Each major section should be 150-200 words
+- Include specific examples, explanations, and transitions
+- Ensure smooth flow between sections
+- Meet or exceed the target word count of {self.target_words} words
+"""
+
         prediction = self.write_article(
             topic=topic,
-            outline=outline,
+            outline=enhanced_outline,
             conversation_context=conversation_context
         )
 
         if hasattr(prediction, 'full_article'):
             article = prediction.full_article.strip()
             word_count = len(article.split())
-            logging.info(f"Article generated successfully: {word_count} words")
+
+            if word_count < self.min_words:
+                logging.warning(f"Article too short ({word_count} words < {self.min_words} min). Regenerating with emphasis on length...")
+                # Try once more with even stronger emphasis
+                enhanced_outline += f"\n\nWARNING: Previous attempt was too short. MUST generate AT LEAST {self.min_words} words!"
+                prediction = self.write_article(
+                    topic=topic,
+                    outline=enhanced_outline,
+                    conversation_context=conversation_context
+                )
+                if hasattr(prediction, 'full_article'):
+                    article = prediction.full_article.strip()
+                    word_count = len(article.split())
+
+            logging.info(f"Article generated successfully: {word_count} words (target: {self.target_words})")
             return article
         else:
             logging.error("Failed to generate article")
@@ -126,9 +160,22 @@ class EnhancedStormModule(dspy.Module):
     """
     Enhanced STORM: Combines storm.py's comprehensive research
     with main.py's clean article generation
+
+    Parameters:
+    -----------
+    target_words : int
+        Target word count for the article (default: 1000)
+    min_words : int
+        Minimum acceptable word count (default: 500)
+    max_perspectives : int
+        Maximum number of perspectives to explore (default: 5)
     """
-    def __init__(self):
+    def __init__(self, target_words=1000, min_words=500, max_perspectives=5):
         super().__init__()
+        self.target_words = target_words
+        self.min_words = min_words
+        self.max_perspectives = max_perspectives
+
         # Research phase (from storm.py - comprehensive)
         self.research_module = dspy.ChainOfThought(ResearchSignature)
         self.generate_toc_module = dspy.ChainOfThought(GenerateTableOfContentsSignature)
@@ -137,7 +184,10 @@ class EnhancedStormModule(dspy.Module):
 
         # Article generation phase (from main.py - clean, no repetition)
         self.outline_module = EnhancedOutlineCreationModule()
-        self.article_module = EnhancedArticleWritingModule()
+        self.article_module = EnhancedArticleWritingModule(
+            target_words=target_words,
+            min_words=min_words
+        )
 
     def forward(self, topic):
         logging.info(f"Starting Enhanced STORM for topic: {topic}")
@@ -167,9 +217,9 @@ class EnhancedStormModule(dspy.Module):
 
         # Loop through perspectives like main.py does (better coverage)
         perspective_list = perspectives_output.perspectives.split("\n") if hasattr(perspectives_output, 'perspectives') else []
-        for i, perspective in enumerate(perspective_list[:5]):  # Top 5 perspectives
+        for i, perspective in enumerate(perspective_list[:self.max_perspectives]):
             if perspective.strip():  # Skip empty lines
-                logging.info(f"  Conversation {i+1}/5: {perspective[:50]}...")
+                logging.info(f"  Conversation {i+1}/{self.max_perspectives}: {perspective[:50]}...")
                 formatted_history = ' '.join([f"{q}: {a}" for q, a in conversation_history])
 
                 conversation_output = self.conversation_module(
@@ -216,21 +266,74 @@ class EnhancedStormModule(dspy.Module):
 
 if __name__ == "__main__":
     import sys
-    module = EnhancedStormModule()
-    topic = sys.argv[1] if len(sys.argv) > 1 else "Sustainable Energy"
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Enhanced STORM: Comprehensive research + clean article generation',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Default settings (1000 words, 5 perspectives)
+  python storm_enhanced.py "Quantum Computing"
+
+  # Short article (500 words)
+  python storm_enhanced.py "AI Ethics" --words 500
+
+  # Long article (2000 words, 10 perspectives)
+  python storm_enhanced.py "Climate Change" --words 2000 --min-words 1500 --perspectives 10
+
+  # Quick research (3 perspectives, 800 words)
+  python storm_enhanced.py "Blockchain" --perspectives 3 --words 800
+        """
+    )
+
+    parser.add_argument('topic', nargs='?', default='Sustainable Energy',
+                       help='Topic to research and write about (default: Sustainable Energy)')
+    parser.add_argument('--words', type=int, default=1000,
+                       help='Target word count (default: 1000)')
+    parser.add_argument('--min-words', type=int, default=500,
+                       help='Minimum word count (default: 500)')
+    parser.add_argument('--perspectives', type=int, default=5,
+                       help='Number of perspectives to explore (default: 5)')
+    parser.add_argument('--json-only', action='store_true',
+                       help='Output only JSON (no article text)')
+
+    args = parser.parse_args()
+
+    # Create module with configuration
+    module = EnhancedStormModule(
+        target_words=args.words,
+        min_words=args.min_words,
+        max_perspectives=args.perspectives
+    )
 
     print(f"\n{'='*80}")
-    print(f"Enhanced STORM: {topic}")
+    print(f"Enhanced STORM: {args.topic}")
+    print(f"{'='*80}")
+    print(f"Configuration: {args.words} words (min: {args.min_words}), {args.perspectives} perspectives")
     print(f"{'='*80}\n")
 
-    results = module.forward(topic)
+    results = module.forward(args.topic)
 
-    print("\n" + "="*80)
-    print("RESULTS")
-    print("="*80)
-    print(json.dumps(results, indent=2))
+    if args.json_only:
+        print(json.dumps(results, indent=2))
+    else:
+        print("\n" + "="*80)
+        print("METADATA")
+        print("="*80)
+        print(f"Word Count: {results['metadata']['word_count']} words (target: {args.words})")
+        print(f"Conversations: {results['metadata']['num_conversations']}")
+        print(f"Perspectives: {results['metadata']['num_perspectives']}")
 
-    print("\n" + "="*80)
-    print("GENERATED ARTICLE")
-    print("="*80)
-    print(results["article"])
+        print("\n" + "="*80)
+        print("GENERATED ARTICLE")
+        print("="*80)
+        print(results["article"])
+
+        print("\n" + "="*80)
+        print(f"Full results saved to: results.json")
+        print("="*80)
+
+        # Save full results to file
+        with open('results.json', 'w') as f:
+            json.dump(results, f, indent=2)
