@@ -70,21 +70,40 @@ class FullArticleCreationModule(dspy.Module):
         full_article = ""
         target_token_length = 800
         min_paragraph_length = 65
-        while len(full_article.split()) < target_token_length:
+        max_iterations = 10  # Prevent infinite loops
+        iterations = 0
+
+        logging.info(f"Starting article generation with target length: {target_token_length} words")
+
+        while len(full_article.split()) < target_token_length and iterations < max_iterations:
+            iterations += 1
+            logging.info(f"Generation iteration {iterations}/{max_iterations}, current length: {len(full_article.split())} words")
+
             prediction = self.process_article(topic=topic, content=content, prompt=prompt)
             if hasattr(prediction, 'full_article'):
                 generated_text = prediction.full_article.strip()
                 paragraphs = generated_text.split('\n')
+
+                added_content = False
                 for paragraph in paragraphs:
                     if len(paragraph.split()) >= min_paragraph_length:
                         full_article += "\n\n" + paragraph
-                    else:
+                        added_content = True
+                    elif paragraph.strip():  # Only add non-empty short paragraphs to prompt
                         prompt += " " + paragraph
+
+                # If we didn't add any content, break to avoid infinite loop
+                if not added_content and generated_text:
+                    logging.warning(f"No paragraphs met minimum length. Adding all content. Generated: {len(generated_text.split())} words")
+                    full_article += "\n\n" + generated_text
+
                 if len(full_article.split()) >= target_token_length:
                     break
             else:
                 logging.error("Failed to generate a segment.")
                 break
+
+        logging.info(f"Article generation complete. Final length: {len(full_article.split())} words after {iterations} iterations")
         return full_article.strip()
 
 class ResearchAndConversationModule(dspy.Module):
