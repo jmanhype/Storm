@@ -66,44 +66,107 @@ class FullArticleCreationModule(dspy.Module):
         self.process_article = dspy.ChainOfThought(CombinedSignature)
 
     def generate_full_article(self, topic, conversation_history, prompt):
+        """
+        Generate article iteratively, section by section to avoid repetition.
+        Each iteration writes a NEW section, not repeating previous content.
+        """
         content = " ".join([answer for _, answer in conversation_history])
         full_article = ""
         target_token_length = 800
-        min_paragraph_length = 65
-        max_iterations = 10  # Prevent infinite loops
+        min_section_length = 100  # Minimum words per section
+        max_iterations = 10
         iterations = 0
+
+        # Track what sections have been covered
+        sections_written = []
 
         logging.info(f"Starting article generation with target length: {target_token_length} words")
 
         while len(full_article.split()) < target_token_length and iterations < max_iterations:
             iterations += 1
-            logging.info(f"Generation iteration {iterations}/{max_iterations}, current length: {len(full_article.split())} words")
+            current_length = len(full_article.split())
+            remaining_words = target_token_length - current_length
 
-            prediction = self.process_article(topic=topic, content=content, prompt=prompt)
+            logging.info(f"Generation iteration {iterations}/{max_iterations}, current length: {current_length}/{target_token_length} words")
+
+            # Build directive for this iteration to write NEW content
+            if iterations == 1:
+                section_prompt = f"""Write the INTRODUCTION section for '{topic}'.
+- Provide background and context
+- Define key terms
+- Preview what the article will cover
+Target: {min(remaining_words, 200)} words."""
+
+            elif iterations == 2:
+                section_prompt = f"""Write the MAIN TECHNOLOGIES/METHODS section for '{topic}'.
+- Focus on HOW it works, technical details, mechanisms
+- Include specific examples and technologies
+- DO NOT repeat benefits/challenges from intro
+- DO NOT redefine terms already covered
+Target: {min(remaining_words, 250)} words."""
+
+            elif iterations == 3:
+                section_prompt = f"""Write the REAL-WORLD APPLICATIONS section for '{topic}'.
+- Focus on concrete examples, case studies, current uses
+- Industries, companies, projects using this
+- Specific numerical data if available
+- DO NOT repeat general concepts already covered
+Target: {min(remaining_words, 250)} words."""
+
+            elif iterations == 4:
+                section_prompt = f"""Write the CHALLENGES AND FUTURE section for '{topic}'.
+- Technical/practical obstacles
+- Current research directions
+- What's on the horizon
+- DO NOT re-list benefits or basic applications already mentioned
+Target: {min(remaining_words, 200)} words."""
+
+            else:
+                section_prompt = f"""Write a brief CONCLUSION for '{topic}'.
+- Synthesize the big picture
+- Future outlook
+- DO NOT repeat specific details, examples, or lists from earlier sections
+- Keep it high-level and forward-looking
+Target: {min(remaining_words, 150)} words."""
+
+            # Include what's already written so LLM knows what NOT to repeat
+            if full_article:
+                section_prompt += f"\n\n=== CRITICAL: DO NOT REPEAT ANY OF THIS ===\n{full_article[-600:]}"  # Show more context
+
+            logging.info(f"  Section directive: {section_prompt[:100]}...")
+
+            # Generate new section
+            prediction = self.process_article(
+                topic=topic,
+                content=content,
+                prompt=section_prompt
+            )
+
             if hasattr(prediction, 'full_article'):
                 generated_text = prediction.full_article.strip()
-                paragraphs = generated_text.split('\n')
+                word_count = len(generated_text.split())
 
-                added_content = False
-                for paragraph in paragraphs:
-                    if len(paragraph.split()) >= min_paragraph_length:
-                        full_article += "\n\n" + paragraph
-                        added_content = True
-                    elif paragraph.strip():  # Only add non-empty short paragraphs to prompt
-                        prompt += " " + paragraph
+                if word_count < 50:
+                    logging.warning(f"Generated section too short ({word_count} words). Skipping.")
+                    continue
 
-                # If we didn't add any content, break to avoid infinite loop
-                if not added_content and generated_text:
-                    logging.warning(f"No paragraphs met minimum length. Adding all content. Generated: {len(generated_text.split())} words")
-                    full_article += "\n\n" + generated_text
+                # Add the new section
+                full_article += "\n\n" + generated_text
+                sections_written.append(f"Iteration {iterations}: {word_count} words")
+
+                logging.info(f"  ✓ Added section: {word_count} words")
 
                 if len(full_article.split()) >= target_token_length:
+                    logging.info(f"Target length reached!")
                     break
             else:
                 logging.error("Failed to generate a segment.")
                 break
 
-        logging.info(f"Article generation complete. Final length: {len(full_article.split())} words after {iterations} iterations")
+        final_word_count = len(full_article.split())
+        logging.info(f"Article generation complete. Final length: {final_word_count} words after {iterations} iterations")
+        logging.info(f"Sections written: {sections_written}")
+
         return full_article.strip()
 
 class ResearchAndConversationModule(dspy.Module):
@@ -136,8 +199,21 @@ class ResearchAndConversationModule(dspy.Module):
         }
 
 if __name__ == "__main__":
+    import sys
     module = ResearchAndConversationModule()
-    topic = "Sustainable Energy"
+    topic = sys.argv[1] if len(sys.argv) > 1 else "Sustainable Energy"
     results = module.forward(topic)
-    print("Integrated Research, Conversation, Perspectives, and Article Outputs:")
+
+    print("\n" + "="*80)
+    print(f"STORM RESULTS: {topic}")
+    print("="*80)
+    print(f"Word Count: {len(results['article'].split())} words")
+    print(f"Perspectives: {len(results['perspectives'])}")
+    print("="*80 + "\n")
+
+    print("ARTICLE:")
+    print("="*80)
+    print(results['article'])
+    print("\n" + "="*80)
+    print("Full JSON results:")
     print(json.dumps(results, indent=4))
