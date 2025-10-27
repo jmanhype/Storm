@@ -1,11 +1,21 @@
+import os
 import dspy
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Initialize DSPy settings with a large language model
-claude = dspy.Claude(model="claude-3-haiku-20240307", api_key="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")
+# Get OpenRouter API key from environment
+openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+if not openrouter_api_key:
+    raise ValueError("OPENROUTER_API_KEY environment variable not found")
+
+# Initialize DSPy settings with OpenRouter
+claude = dspy.OpenAI(
+    model="anthropic/claude-3-haiku",
+    api_key=openrouter_api_key,
+    api_base="https://openrouter.ai/api/v1"
+)
 dspy.settings.configure(lm=claude)
 
 class ArticleWritingSignature(dspy.Signature):
