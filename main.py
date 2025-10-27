@@ -13,12 +13,12 @@ if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY environment variable not found")
 
 # Initialize DSPy settings with OpenRouter
-claude = dspy.OpenAI(
-    model="anthropic/claude-3-haiku",
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
     api_key=openrouter_api_key,
     api_base="https://openrouter.ai/api/v1"
 )
-dspy.settings.configure(lm=claude)
+dspy.settings.configure(lm=lm)
 
 class ArticleCreationStateMachine:
     def __init__(self, topic, model):
@@ -61,7 +61,7 @@ class ArticleCreationStateMachine:
 
 if __name__ == "__main__":
     topic = "Quantum Computing"
-    model = claude  # Updated to use the configured model
+    model = lm  # Updated to use the configured model
     state_machine = ArticleCreationStateMachine(topic, model)
     generated_article = state_machine.run()
     print("Generated article:", generated_article)

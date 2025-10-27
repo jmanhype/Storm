@@ -13,12 +13,12 @@ if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY environment variable not found")
 
 # Configuration for the large model with OpenRouter
-claude = dspy.OpenAI(
-    model="anthropic/claude-3-haiku",
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
     api_key=openrouter_api_key,
     api_base="https://openrouter.ai/api/v1"
 )
-dspy.settings.configure(lm=claude)
+dspy.settings.configure(lm=lm)
 
 class LinkData(BaseModel):
     links: list[str]
@@ -75,11 +75,11 @@ class ResearchModule(dspy.Module):
             logging.info(f"Raw Prediction: {prediction}")
             logging.info(f"Predictions received: {prediction}")
 
-            # Generate the table of contents using the rationale
+            # Generate the table of contents using the reasoning
             toc_prediction = self.generate_toc_predict(
                 topic=topic,
                 related_topics=LinkData(links=related_topics).to_json(),
-                rationale=prediction.rationale
+                rationale=prediction.reasoning
             )
             if toc_prediction and hasattr(toc_prediction, '_completions') and toc_prediction._completions:
                 logging.info(f"Generated Table of Contents: {toc_prediction.table_of_contents}")

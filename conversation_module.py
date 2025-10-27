@@ -13,12 +13,12 @@ if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY environment variable not found")
 
 # Initialize DSPy settings with OpenRouter
-claude = dspy.OpenAI(
-    model="anthropic/claude-3-haiku",
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
     api_key=openrouter_api_key,
     api_base="https://openrouter.ai/api/v1"
 )
-dspy.settings.configure(lm=claude)
+dspy.settings.configure(lm=lm)
 
 class LinkData(BaseModel):
     links: list[str]
@@ -51,6 +51,25 @@ class GenerateTableOfContentsSignature(dspy.Signature):
 class PerspectiveSignature(dspy.Signature):
     topic = dspy.InputField(desc="The main topic for which perspectives are needed")
     perspectives = dspy.OutputField(desc="Generated list of perspectives")
+
+class ConversationModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.conversation_module = dspy.ChainOfThought(ConversationSignature)
+
+    def forward(self, topic, perspective, conversation_history):
+        formatted_history = ' '.join([f"{q}: {a}" for q, a in conversation_history])
+        conversation_output = self.conversation_module(
+            topic=topic,
+            perspective=perspective,
+            conversation_history=formatted_history
+        )
+        updated_history = conversation_history + [(conversation_output.question, conversation_output.answer)]
+        return {
+            "next_question": conversation_output.question,
+            "answer": conversation_output.answer,
+            "conversation_history": updated_history
+        }
 
 class ResearchAndConversationModule(dspy.Module):
     def __init__(self):

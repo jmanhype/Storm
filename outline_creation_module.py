@@ -12,12 +12,12 @@ if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY environment variable not found")
 
 # Initialize DSPy settings with OpenRouter
-claude = dspy.OpenAI(
-    model="anthropic/claude-3-haiku",
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
     api_key=openrouter_api_key,
     api_base="https://openrouter.ai/api/v1"
 )
-dspy.settings.configure(lm=claude)
+dspy.settings.configure(lm=lm)
 
 class CombinedSignature(dspy.Signature):
     topic = dspy.InputField(desc="Main topic for outline creation")
@@ -42,6 +42,21 @@ def parse_outline(text):
     if current_header and content_list:
         outline_dict[current_header] = ' '.join(content_list).strip()
     return outline_dict if outline_dict else {'Full Article': text}
+
+class OutlineCreationModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.process_article = dspy.ChainOfThought(CombinedSignature)
+
+    def forward(self, topic, conversation_history):
+        content = " ".join([answer for _, answer in conversation_history])
+        prompt = f"Create an outline for the topic: {topic}"
+        prediction = self.process_article(topic=topic, content=content, prompt=prompt)
+        if hasattr(prediction, 'full_article'):
+            return prediction.full_article
+        else:
+            logging.error("Failed to generate outline.")
+            return None
 
 class FullArticleCreationModule(dspy.Module):
     def __init__(self):
