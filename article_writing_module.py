@@ -28,6 +28,17 @@ class ArticleWritingModule(dspy.Module):
         self.article_predict = dspy.ChainOfThought(ArticleWritingSignature)
 
     def forward(self, outline, references):
+        # Handle both string and dict inputs
+        if isinstance(outline, str):
+            # If outline is a string, use it directly
+            try:
+                final_article = self.article_predict(outline=outline, full_article="")
+                return final_article.full_article if hasattr(final_article, 'full_article') else "Failed to generate the final article."
+            except Exception as e:
+                logging.error(f"Error generating the final article: {str(e)}")
+                return "Failed to generate the final article."
+
+        # Handle dict outline (legacy support)
         sections = []
         for section_title, content in outline.items():
             try:
