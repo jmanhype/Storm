@@ -347,6 +347,106 @@ def test_smoke_performance():
     print(f"   Generated 200 words in {duration:.1f}s")
 
 # ============================================================================
+# FEATURE TESTS (TOC, Perspectives, Conversations, etc.)
+# ============================================================================
+
+@test("Feature: --show-toc displays table of contents")
+def test_feature_show_toc():
+    result = subprocess.run(
+        ['python3', 'storm', 'Artificial Intelligence', '--words', '300', '--show-toc'],
+        capture_output=True,
+        text=True,
+        timeout=180
+    )
+    assert result.returncode == 0, "TOC display failed"
+    assert '📋 TABLE OF CONTENTS' in result.stdout, "TOC header missing"
+    # Check for numbered sections (e.g., "1.", "2.", "3.")
+    assert result.stdout.count('.') >= 5, "TOC should have multiple sections"
+    print("   TOC displayed with multiple sections")
+
+@test("Feature: --show-perspectives displays perspectives")
+def test_feature_show_perspectives():
+    result = subprocess.run(
+        ['python3', 'storm', 'Climate Change', '--words', '300', '--show-perspectives'],
+        capture_output=True,
+        text=True,
+        timeout=180
+    )
+    assert result.returncode == 0, "Perspectives display failed"
+    assert '👥 PERSPECTIVES' in result.stdout, "Perspectives header missing"
+    assert 'Generated' in result.stdout and 'perspectives' in result.stdout, "Perspective count missing"
+    # Check for numbered perspectives
+    assert '1.' in result.stdout and '2.' in result.stdout, "Perspectives should be numbered"
+    print("   Perspectives displayed with diverse viewpoints")
+
+@test("Feature: --show-conversations displays Q&A")
+def test_feature_show_conversations():
+    result = subprocess.run(
+        ['python3', 'storm', 'Robotics', '--words', '300', '--show-conversations'],
+        capture_output=True,
+        text=True,
+        timeout=180
+    )
+    assert result.returncode == 0, "Conversations display failed"
+    assert '💬 CONVERSATIONS' in result.stdout, "Conversations header missing"
+    assert 'Q1:' in result.stdout and 'A1:' in result.stdout, "Q&A format missing"
+    print("   Conversations displayed with Q&A pairs")
+
+@test("Feature: --show-all displays everything")
+def test_feature_show_all():
+    result = subprocess.run(
+        ['python3', 'storm', 'Blockchain', '--words', '300', '--show-all'],
+        capture_output=True,
+        text=True,
+        timeout=180
+    )
+    assert result.returncode == 0, "Show all failed"
+    assert '📋 TABLE OF CONTENTS' in result.stdout, "TOC missing from --show-all"
+    assert '👥 PERSPECTIVES' in result.stdout, "Perspectives missing from --show-all"
+    assert '💬 CONVERSATIONS' in result.stdout, "Conversations missing from --show-all"
+    assert '🔬 RESEARCH' in result.stdout, "Research missing from --show-all"
+    print("   All features displayed: TOC, perspectives, conversations, research")
+
+@test("Feature: JSON output has complete metadata")
+def test_feature_json_metadata():
+    result = subprocess.run(
+        ['python3', 'storm', 'Neural Networks', '--words', '300', '--json-only'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,  # Suppress stderr for clean JSON
+        text=True,
+        timeout=180
+    )
+    assert result.returncode == 0, "JSON generation failed"
+
+    try:
+        data = json.loads(result.stdout)
+
+        # Check top-level keys
+        assert 'research' in data, "Missing 'research' key"
+        assert 'conversation' in data, "Missing 'conversation' key"
+        assert 'perspectives' in data, "Missing 'perspectives' key"
+        assert 'article' in data, "Missing 'article' key"
+        assert 'metadata' in data, "Missing 'metadata' key"
+
+        # Check metadata completeness
+        metadata = data['metadata']
+        required_fields = ['word_count', 'target_words', 'iterations',
+                          'num_perspectives', 'num_conversations', 'timestamp', 'topic']
+        for field in required_fields:
+            assert field in metadata, f"Missing metadata field: {field}"
+
+        # Check research data
+        assert 'table_of_contents' in data['research'], "Missing TOC in research"
+        assert 'related_topics' in data['research'], "Missing related topics"
+
+        # Check conversation data
+        assert 'history' in data['conversation'], "Missing conversation history"
+
+        print(f"   Complete metadata: {len(required_fields)} required fields present")
+    except json.JSONDecodeError as e:
+        raise AssertionError(f"Invalid JSON: {e}")
+
+# ============================================================================
 # MAIN TEST RUNNER
 # ============================================================================
 
@@ -379,6 +479,12 @@ def main():
     test_smoke_all_formats()
     test_smoke_special_chars()
     test_smoke_performance()
+
+    test_feature_show_toc()
+    test_feature_show_perspectives()
+    test_feature_show_conversations()
+    test_feature_show_all()
+    test_feature_json_metadata()
 
     # Print results
     print("\n" + "="*80)
