@@ -1,12 +1,22 @@
+import os
 import dspy
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Initialize DSPy settings with a large language model
-claude = dspy.Claude(model="claude-3-haiku-20240307", api_key="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")
-dspy.settings.configure(lm=claude)
+# Get OpenRouter API key from environment
+openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+if not openrouter_api_key:
+    raise ValueError("OPENROUTER_API_KEY environment variable not found")
+
+# Initialize DSPy settings with OpenRouter
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
+    api_key=openrouter_api_key,
+    api_base="https://openrouter.ai/api/v1"
+)
+dspy.settings.configure(lm=lm)
 
 class ArticleWritingSignature(dspy.Signature):
     outline = dspy.InputField(desc="Final article outline")
@@ -18,6 +28,17 @@ class ArticleWritingModule(dspy.Module):
         self.article_predict = dspy.ChainOfThought(ArticleWritingSignature)
 
     def forward(self, outline, references):
+        # Handle both string and dict inputs
+        if isinstance(outline, str):
+            # If outline is a string, use it directly
+            try:
+                final_article = self.article_predict(outline=outline, full_article="")
+                return final_article.full_article if hasattr(final_article, 'full_article') else "Failed to generate the final article."
+            except Exception as e:
+                logging.error(f"Error generating the final article: {str(e)}")
+                return "Failed to generate the final article."
+
+        # Handle dict outline (legacy support)
         sections = []
         for section_title, content in outline.items():
             try:

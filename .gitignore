@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+results.json
+*.md
+!CLI_README.md
+!README.md

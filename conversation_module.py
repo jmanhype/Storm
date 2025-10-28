@@ -1,13 +1,24 @@
 import logging
 import json
+import os
 from pydantic import BaseModel
 import dspy
 from utils import fetch_wikipedia_links, fetch_table_of_contents
 
 logging.basicConfig(level=logging.INFO)
 
-claude = dspy.Claude(model="claude-3-haiku-20240307", api_key="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")
-dspy.settings.configure(lm=claude)
+# Get OpenRouter API key from environment
+openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+if not openrouter_api_key:
+    raise ValueError("OPENROUTER_API_KEY environment variable not found")
+
+# Initialize DSPy settings with OpenRouter
+lm = dspy.LM(
+    model="openrouter/anthropic/claude-3-haiku",
+    api_key=openrouter_api_key,
+    api_base="https://openrouter.ai/api/v1"
+)
+dspy.settings.configure(lm=lm)
 
 class LinkData(BaseModel):
     links: list[str]
@@ -40,6 +51,25 @@ class GenerateTableOfContentsSignature(dspy.Signature):
 class PerspectiveSignature(dspy.Signature):
     topic = dspy.InputField(desc="The main topic for which perspectives are needed")
     perspectives = dspy.OutputField(desc="Generated list of perspectives")
+
+class ConversationModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.conversation_module = dspy.ChainOfThought(ConversationSignature)
+
+    def forward(self, topic, perspective, conversation_history):
+        formatted_history = ' '.join([f"{q}: {a}" for q, a in conversation_history])
+        conversation_output = self.conversation_module(
+            topic=topic,
+            perspective=perspective,
+            conversation_history=formatted_history
+        )
+        updated_history = conversation_history + [(conversation_output.question, conversation_output.answer)]
+        return {
+            "next_question": conversation_output.question,
+            "answer": conversation_output.answer,
+            "conversation_history": updated_history
+        }
 
 class ResearchAndConversationModule(dspy.Module):
     def __init__(self):
