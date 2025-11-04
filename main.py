@@ -1,5 +1,21 @@
+"""
+STORM Article Creation State Machine.
+
+This module orchestrates the complete article generation pipeline:
+1. Research - Gather Wikipedia links and table of contents
+2. Perspectives - Generate multiple viewpoints on the topic
+3. Conversation - Create Q&A dialogue from perspectives
+4. Outline - Structure the article based on conversations
+5. Writing - Generate the final article text
+
+Example:
+    >>> machine = ArticleCreationStateMachine("Quantum Computing", lm)
+    >>> article = machine.run()
+    >>> print(article)
+"""
 import logging
 import os
+from typing import Optional, Dict, Any
 from research_module import ResearchModule
 from perspective_module import PerspectiveModule
 from conversation_module import ConversationModule
@@ -21,7 +37,30 @@ lm = dspy.LM(
 dspy.settings.configure(lm=lm)
 
 class ArticleCreationStateMachine:
-    def __init__(self, topic, model):
+    """
+    State machine for orchestrating the article creation pipeline.
+
+    This class manages the complete workflow from research to final article,
+    coordinating between different modules and handling state transitions.
+
+    Attributes:
+        topic: The main topic for article generation.
+        model: The language model instance for DSPy.
+        research: Module for conducting research.
+        perspective: Module for generating perspectives.
+        conversation: Module for Q&A conversations.
+        outline_creation: Module for creating article outlines.
+        article_writing: Module for writing the final article.
+    """
+
+    def __init__(self, topic: str, model: Any):
+        """
+        Initialize the state machine with a topic and model.
+
+        Args:
+            topic: The topic to research and write about.
+            model: The DSPy language model instance.
+        """
         self.topic = topic
         self.model = model
         self.research = ResearchModule()
@@ -30,7 +69,20 @@ class ArticleCreationStateMachine:
         self.outline_creation = OutlineCreationModule()
         self.article_writing = ArticleWritingModule()
 
-    def run(self):
+    def run(self) -> Optional[str]:
+        """
+        Execute the complete article generation pipeline.
+
+        This method runs all stages of article creation in sequence:
+        research, perspective generation, conversations, outline creation,
+        and final article writing.
+
+        Returns:
+            The generated article text, or None if any stage fails.
+
+        Raises:
+            No exceptions are raised; errors are logged and None is returned.
+        """
         logging.info(f"Starting the state machine for topic: {self.topic}")
 
         # Step 1: Conduct Research

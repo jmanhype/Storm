@@ -1,9 +1,30 @@
+"""
+Utility functions for fetching Wikipedia data.
+
+This module provides helper functions for interacting with the Wikipedia API
+to retrieve related links and table of contents for research topics.
+"""
 import logging
+from typing import List
 import requests
 import dspy
 
-def fetch_wikipedia_links(topic):
-    """Fetches links to related pages from a Wikipedia article."""
+
+def fetch_wikipedia_links(topic: str) -> List[str]:
+    """
+    Fetches links to related pages from a Wikipedia article.
+
+    Args:
+        topic: The topic to search for on Wikipedia.
+
+    Returns:
+        A list of related Wikipedia page titles. Returns empty list on error.
+
+    Example:
+        >>> links = fetch_wikipedia_links("Quantum Computing")
+        >>> print(len(links))
+        50
+    """
     endpoint = "https://en.wikipedia.org/w/api.php"
     params = {
         "action": "query",
@@ -24,8 +45,21 @@ def fetch_wikipedia_links(topic):
         logging.error(f"HTTP Request failed: {e}")
         return []
 
-def fetch_table_of_contents(topic):
-    """Fetches the table of contents for a Wikipedia page."""
+def fetch_table_of_contents(topic: str) -> List[str]:
+    """
+    Fetches the table of contents for a Wikipedia page.
+
+    Args:
+        topic: The Wikipedia page title to fetch sections for.
+
+    Returns:
+        A list of section titles from the page. Returns empty list on error.
+
+    Example:
+        >>> sections = fetch_table_of_contents("Machine Learning")
+        >>> print(sections[0])
+        "Overview"
+    """
     endpoint = "https://en.wikipedia.org/w/api.php"
     params = {
         "action": "parse",
