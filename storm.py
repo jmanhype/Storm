@@ -1,7 +1,29 @@
+"""
+STORM - Synthesis of Topic Outline through Retrieval and Multi-perspective generation.
+
+This is the main implementation of the STORM methodology for generating comprehensive
+articles through a structured pipeline:
+1. Research Phase - Fetch related Wikipedia links and table of contents
+2. Conversation Phase - Generate Q&A from multiple perspectives
+3. Article Generation Phase - Iteratively write article sections
+
+The article generation uses a novel section-based approach to prevent repetition
+and ensure comprehensive coverage of the topic.
+
+Example:
+    >>> module = ResearchAndConversationModule()
+    >>> results = module.forward("Quantum Computing")
+    >>> print(results['article'])
+
+Attributes:
+    openrouter_api_key: API key for OpenRouter service (from env var)
+    lm: Configured DSPy language model instance
+"""
 import logging
 import json
 import os
 import re
+from typing import List, Dict, Any, Tuple
 from pydantic import BaseModel
 import dspy
 from utils import fetch_wikipedia_links, fetch_table_of_contents
@@ -23,13 +45,20 @@ lm = dspy.LM(
 dspy.settings.configure(lm=lm)
 
 class LinkData(BaseModel):
+    """Model for Wikipedia link data."""
     links: list[str]
-    def to_json(self):
+
+    def to_json(self) -> str:
+        """Convert links to JSON string."""
         return json.dumps(self.links)
 
+
 class TableOfContents(BaseModel):
+    """Model for table of contents sections."""
     sections: list[str]
-    def to_json(self):
+
+    def to_json(self) -> str:
+        """Convert sections to JSON string."""
         return json.dumps(self.sections)
 
 class ConversationSignature(dspy.Signature):
@@ -61,14 +90,37 @@ class CombinedSignature(dspy.Signature):
     full_article = dspy.OutputField(desc="Completed article text")
     
 class FullArticleCreationModule(dspy.Module):
+    """
+    Module for generating complete articles through iterative section writing.
+
+    This module implements a novel approach to prevent repetition by generating
+    articles section-by-section with specific prompts for each section type.
+    """
+
     def __init__(self):
+        """Initialize the article creation module."""
         super().__init__()
         self.process_article = dspy.ChainOfThought(CombinedSignature)
 
-    def generate_full_article(self, topic, conversation_history, prompt):
+    def generate_full_article(self, topic: str, conversation_history: List[Tuple[str, str]], prompt: str) -> str:
         """
         Generate article iteratively, section by section to avoid repetition.
-        Each iteration writes a NEW section, not repeating previous content.
+
+        This method generates articles in multiple iterations, with each iteration
+        focusing on a specific section type (Introduction, Technologies, Applications,
+        Challenges, Conclusion). This approach prevents content repetition.
+
+        Args:
+            topic: The main topic for the article.
+            conversation_history: List of (question, answer) tuples from conversations.
+            prompt: Initial prompt for article generation (may be overridden).
+
+        Returns:
+            The complete article text as a string.
+
+        Note:
+            Each iteration writes a NEW section, not repeating previous content.
+            The target length is 800 words with a maximum of 10 iterations.
         """
         content = " ".join([answer for _, answer in conversation_history])
         full_article = ""
@@ -170,7 +222,22 @@ Target: {min(remaining_words, 150)} words."""
         return full_article.strip()
 
 class ResearchAndConversationModule(dspy.Module):
+    """
+    Main orchestration module for the STORM pipeline.
+
+    This module coordinates all phases of article generation: research,
+    perspective generation, conversations, and article writing.
+
+    Attributes:
+        research_module: Module for conducting research.
+        generate_toc_module: Module for generating table of contents.
+        conversation_module: Module for Q&A conversations.
+        perspective_predict: Module for generating perspectives.
+        article_module: Module for writing the final article.
+    """
+
     def __init__(self):
+        """Initialize the research and conversation orchestration module."""
         super().__init__()
         self.research_module = dspy.ChainOfThought(ResearchSignature)
         self.generate_toc_module = dspy.ChainOfThought(GenerateTableOfContentsSignature)
@@ -178,7 +245,28 @@ class ResearchAndConversationModule(dspy.Module):
         self.perspective_predict = dspy.Predict(PerspectiveSignature)
         self.article_module = FullArticleCreationModule()
 
-    def forward(self, topic):
+    def forward(self, topic: str) -> Dict[str, Any]:
+        """
+        Execute the complete STORM pipeline for a given topic.
+
+        This method orchestrates all stages: fetches Wikipedia data, generates
+        perspectives, conducts conversations, and writes the final article.
+
+        Args:
+            topic: The topic to research and write about.
+
+        Returns:
+            A dictionary containing:
+                - research: Dict with related_topics and table_of_contents
+                - conversation: Dict with next_question, answer, and history
+                - perspectives: List of perspective strings
+                - article: The generated article text
+
+        Example:
+            >>> module = ResearchAndConversationModule()
+            >>> results = module.forward("Machine Learning")
+            >>> print(f"Article length: {len(results['article'].split())} words")
+        """
         related_topics = fetch_wikipedia_links(topic)
         toc_data = self.generate_toc_module(topic=topic, related_topics=LinkData(links=related_topics).to_json(), rationale="Generate detailed TOC")
         table_of_contents = toc_data.table_of_contents if hasattr(toc_data, 'table_of_contents') else "No TOC generated"
